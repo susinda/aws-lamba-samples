@@ -1,0 +1,41 @@
+from __future__ import print_function
+from datetime import datetime
+import boto3
+import os
+import uuid
+import json
+
+def lambda_handler(event, context):
+    
+    print("Received event: " + json.dumps(event, indent=2) )
+    message = event['Records'][0]['Sns']['Message']
+    
+    sqs = boto3.client('sqs')
+    sqs.send_message(QueueUrl=os.environ['QUEUE_URL'], MessageBody=(message) )
+    
+    recordId = datetime.today().strftime('%Y%m%d-%H%M%S-%s')
+    print("From SNS: " + recordId)
+    
+    #Creating new record in DynamoDB table
+    dynamodb = boto3.resource('dynamodb')
+    table = dynamodb.Table(os.environ['DB_TABLE_NAME'])
+    table.put_item(
+        Item={
+            'LogId' : recordId,
+            'Message' : message
+        }
+    )
+
+    
+    filename = recordId + '.txt'
+    bucket_name = os.environ['BUCKET_NAME'] 
+    print('Writing to bucket_name: ' + bucket_name)
+    
+    lambda_path = "/tmp/" + filename
+    with open(lambda_path, 'w+') as file:
+        file.write(message)
+        file.close()
+    s3 = boto3.resource('s3')
+    s3.meta.client.upload_file(lambda_path, bucket_name, filename)
+  
+   
